@@ -5,6 +5,7 @@ mod win32_common;
 mod window;
 mod keyboard;
 mod mouse;
+mod gfx;
 mod app;
 use app::App;
 pub type Result<T> = core::result::Result<T, Win32Error>;

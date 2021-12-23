@@ -12,11 +12,12 @@ use windows::Win32::UI::WindowsAndMessaging::{
     WM_ACTIVATE, WM_CHAR, WM_DESTROY, WM_KEYDOWN, WM_KEYUP, WM_KILLFOCUS, WM_LBUTTONDOWN,
     WM_LBUTTONUP, WM_MOUSEHWHEEL, WM_MOUSEMOVE, WM_NCCREATE, WM_RBUTTONDOWN, WM_RBUTTONUP,
     WM_SYSKEYDOWN, WM_SYSKEYUP, WNDCLASSW, WS_CAPTION, WS_MINIMIZEBOX, WS_OVERLAPPEDWINDOW,
-    WS_SYSMENU, WS_VISIBLE,
+    WS_SYSMENU, WS_VISIBLE, WM_SIZE, GetClientRect, WM_PAINT,
 };
 
 use crate::keyboard::Keyboard;
 use crate::mouse::Mouse;
+use crate::gfx::GFX;
 
 // Dealing with errors
 //======================
@@ -27,17 +28,19 @@ use crate::error::Win32Error;
 pub type Result<T> = core::result::Result<T, Win32Error>;
 
 pub struct Window {
-    width: i32,
-    height: i32,
+    pub width: i32,
+    pub height: i32,
     window_name: String,
     window_handle: HWND,
     pub visible: bool,
     kbd: Keyboard,
     mouse: Mouse,
+    gfx: Option<GFX>,
 }
 
 impl Window {
     pub fn new(width: i32, height: i32, window_user_name: &str) -> Window {
+        
         Window {
             width,
             height,
@@ -46,6 +49,7 @@ impl Window {
             visible: false, // will need to be set on actual window creation
             kbd: Keyboard::new(),
             mouse: Mouse::new(),
+            gfx: None,
         }
     }
 
@@ -97,6 +101,10 @@ impl Window {
                 )
             };
 
+
+            // Initialize Graphics
+            let mut gfx = pollster::block_on(GFX::new(&self)); 
+            self.gfx = Some(gfx);
             
             // Check for error
             debug_assert!(window_handle != 0);
@@ -231,6 +239,34 @@ impl Window {
                     0
                 }
 
+                WM_SIZE => {
+                    println!("WM_SIZE");
+                    let mut rc: RECT = RECT::default();
+                    GetClientRect(self.window_handle, &mut rc);
+                    let new_width = (rc.right - rc.left) as u32;
+                    let new_height = (rc.bottom - rc.top) as u32;
+                    // Update the GPU 
+                    if let Some(gfx) = self.gfx.as_mut() {
+                        gfx.resize(new_width, new_height);
+                    }
+                    0
+                }
+
+                WM_PAINT => {
+                    println!("WM_PAINT");
+                    let gfx =  self.gfx.as_mut().unwrap();
+                    match gfx.render() {
+                        Ok(_) => {}
+                        // Reconfigure the surface if lost
+                        Err(wgpu::SurfaceError::Lost) => gfx.resize(self.width as u32, self.height as u32),
+                        // The system is out of memory, we should probably quit
+                        Err(wgpu::SurfaceError::OutOfMemory) => PostQuitMessage(0),
+                        // All other errors (Outdated, Timeout) should be resolved by the next frame
+                        Err(e) => eprintln!("{:?}", e),
+                    }
+                    0
+                }
+    
                 WM_DESTROY => {
                     PostQuitMessage(0);
                     0
