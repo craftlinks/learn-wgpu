@@ -5,6 +5,7 @@ pub(crate) struct GFX {
     device: wgpu::Device,
     queue: wgpu::Queue,
     config: wgpu::SurfaceConfiguration,
+    render_pipeline: wgpu::RenderPipeline,
 }
 
 impl GFX {
@@ -50,34 +51,89 @@ impl GFX {
 
         // Configures a `Surface` for presentation.
         let surface_config = wgpu::SurfaceConfiguration {
-            
-            // The usage of the swap chain. 
+            // The usage of the swap chain.
             // The only supported usage is `RENDER_ATTACHMENT`.
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-            
+
             // The texture format of the swap chain.
             format: surface.get_preferred_format(&adapter).unwrap(),
-            
-            // Width and height of the swap chain. 
+
+            // Width and height of the swap chain.
             // Must be the same size as the surface.
             width: window.width as u32,
             height: window.height as u32,
-            
-            // Presentation mode of the swap chain. 
+
+            // Presentation mode of the swap chain.
             // FIFO is the only guaranteed to be supported.
             // FIFO will cap the display rate at the displays framerate.
-            // This is essentially VSync. This is also the most optimal mode on mobile. 
+            // This is essentially VSync. This is also the most optimal mode on mobile.
             present_mode: wgpu::PresentMode::Fifo,
         };
 
         // Initializes `Surface` for presentation.
         surface.configure(&device, &surface_config);
 
+        // Create shader module from WGSL source code.
+        let shader = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
+            label: Some("Shader"),
+            source: wgpu::ShaderSource::Wgsl(include_str!("shader.wgsl").into()),
+        });
+
+        // Handle to pipeline layout.
+        let render_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("Render Pipeline Layout"),
+                bind_group_layouts: &[],
+                push_constant_ranges: &[],
+            });
+
+        let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("Render Pipeline"),
+            layout: Some(&render_pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &shader,
+                entry_point: "vs_main",
+                buffers: &[], // type of vertices we want to pass to the vertex shader.
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &shader,
+                entry_point: "fs_main",
+                // The targets field tells wgpu what color outputs it should set up.
+                // Currently, we only need one for the surface.
+                targets: &[wgpu::ColorTargetState {
+                    format: surface_config.format,                  // Surface's format.
+                    blend: Some(wgpu::BlendState::REPLACE), // Replace old with new.
+                    write_mask: wgpu::ColorWrites::ALL, // write to all colors: red, blue, green, and alpha.
+                }],
+            }),
+            // The primitive field describes how to interpret our vertices when converting them into triangles.
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList, // Each three vertices will correspond to one triangle.
+                strip_index_format: None,
+                front_face: wgpu::FrontFace::Ccw, // a triangle is facing forward if the vertices are arranged in a counter-clockwise direction.
+                cull_mode: Some(wgpu::Face::Back), // Not front-facing triangles are excluded from render (culled).
+                // Setting this to anything other than Fill requires Features::NON_FILL_POLYGON_MODE
+                polygon_mode: wgpu::PolygonMode::Fill,
+                // Requires Features::DEPTH_CLIP_CONTROL
+                unclipped_depth: false,
+                // Requires Features::CONSERVATIVE_RASTERIZATION
+                conservative: false,
+            },
+            depth_stencil: None, 
+            multisample: wgpu::MultisampleState {
+                count: 1, // No multisampling.                         
+                mask: !0, // Use all samples.                   
+                alpha_to_coverage_enabled: false, 
+            },
+            multiview: None,
+        });
+
         Self {
             surface,
             device,
             queue,
             config: surface_config,
+            render_pipeline,
         }
     }
 
@@ -95,7 +151,9 @@ impl GFX {
         let output = self.surface.get_current_texture()?;
 
         // Creates a view of this texture.
-        let view = output.texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let view = output
+            .texture
+            .create_view(&wgpu::TextureViewDescriptor::default());
 
         // Encodes a series of GPU operations.
         let mut encoder = self
@@ -104,7 +162,8 @@ impl GFX {
                 label: Some("Render Encoder"),
             });
 
-        {  // Begins recording of a render pass.
+        {
+            // Begins recording of a render pass.
 
             let color_attachments = &[wgpu::RenderPassColorAttachment {
                 view: &view,
@@ -120,17 +179,22 @@ impl GFX {
                     store: true,
                 },
             }];
-            
+
             let desc = {
                 wgpu::RenderPassDescriptor {
                     label: Some("Render Pass"),
                     color_attachments: color_attachments,
                     depth_stencil_attachment: None,
                 }
-
             };
-            
-            let _render_pass = encoder.begin_render_pass(&desc);
+
+            let mut render_pass = encoder.begin_render_pass(&desc);
+
+            render_pass.set_pipeline(&self.render_pipeline);
+            // Draw something with 3 vertices and 1 instance.
+            // Used in [[builtin(vertex_index)]] in the shader source.
+            render_pass.draw(0..3, 0..1);
+
         }
 
         // submit will accept anything that implements IntoIter
@@ -138,7 +202,5 @@ impl GFX {
         output.present();
 
         Ok(())
-        
-
     }
 }

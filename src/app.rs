@@ -1,7 +1,7 @@
 use raw_window_handle::HasRawWindowHandle;
 use raw_window_handle::RawWindowHandle::Win32;
 use windows::Win32::UI::WindowsAndMessaging::{
-    DispatchMessageW, GetMessageW, PeekMessageW, TranslateMessage, MSG, PM_REMOVE, WM_QUIT,
+    DispatchMessageW, GetMessageW, PeekMessageW, TranslateMessage, MSG, PM_REMOVE, WM_QUIT, PostQuitMessage,
 };
 pub type Result<T> = core::result::Result<T, Win32Error>;
 use crate::{error::Win32Error, window::Window};
@@ -37,7 +37,7 @@ impl App {
                         TranslateMessage(&message);
                         DispatchMessageW(&message);
                     }
-                    self.render()?;
+                    //self.render()?;
                 } else {
                     GetMessageW(&mut message, None, 0, 0);
 
@@ -51,7 +51,18 @@ impl App {
         }
     }
 
-    fn render(&mut self) -> Result<()> {
-        Ok(())
-    }
+    // fn render(&mut self) -> Result<()> {
+    //     println!("APP_RENDER");
+    //     let gfx = self.window.gfx.as_mut().unwrap();
+    //     match gfx.render() {
+    //         Ok(_) => {}
+    //         // Reconfigure the surface if lost
+    //         Err(wgpu::SurfaceError::Lost) => gfx.resize(self.window.width as u32, self.window.height as u32),
+    //         // The system is out of memory, we should probably quit
+    //         Err(wgpu::SurfaceError::OutOfMemory) => unsafe {PostQuitMessage(0)},
+    //         // All other errors (Outdated, Timeout) should be resolved by the next frame
+    //         Err(e) => eprintln!("{:?}", e),
+    //     }
+    //     Ok(())
+    // }
 }
