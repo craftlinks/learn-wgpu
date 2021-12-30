@@ -1,4 +1,8 @@
-use crate::window::Window;
+use std::mem::size_of;
+
+use wgpu::util::DeviceExt;
+
+use crate::{window::Window, Vertex, VERTICES};
 
 pub(crate) struct GFX {
     surface: wgpu::Surface,
@@ -6,6 +10,7 @@ pub(crate) struct GFX {
     queue: wgpu::Queue,
     config: wgpu::SurfaceConfiguration,
     render_pipeline: wgpu::RenderPipeline,
+    vertex_buffer: wgpu::Buffer,
 }
 
 impl GFX {
@@ -93,7 +98,7 @@ impl GFX {
             vertex: wgpu::VertexState {
                 module: &shader,
                 entry_point: "vs_main",
-                buffers: &[], // type of vertices we want to pass to the vertex shader.
+                buffers: &[Vertex::desc()], // type of vertices we want to pass to the vertex shader.
             },
             fragment: Some(wgpu::FragmentState {
                 module: &shader,
@@ -101,7 +106,7 @@ impl GFX {
                 // The targets field tells wgpu what color outputs it should set up.
                 // Currently, we only need one for the surface.
                 targets: &[wgpu::ColorTargetState {
-                    format: surface_config.format,                  // Surface's format.
+                    format: surface_config.format,          // Surface's format.
                     blend: Some(wgpu::BlendState::REPLACE), // Replace old with new.
                     write_mask: wgpu::ColorWrites::ALL, // write to all colors: red, blue, green, and alpha.
                 }],
@@ -119,14 +124,25 @@ impl GFX {
                 // Requires Features::CONSERVATIVE_RASTERIZATION
                 conservative: false,
             },
-            depth_stencil: None, 
+            depth_stencil: None,
             multisample: wgpu::MultisampleState {
-                count: 1, // No multisampling.                         
-                mask: !0, // Use all samples.                   
-                alpha_to_coverage_enabled: false, 
+                count: 1, // No multisampling.
+                mask: !0, // Use all samples.
+                alpha_to_coverage_enabled: false,
             },
             multiview: None,
         });
+
+        let vertex_buffer = unsafe {
+            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("Vertex Buffer"),
+                contents: unsafe {
+                    let new_len = core::mem::size_of_val(VERTICES) / std::mem::size_of::<u8>();
+                    core::slice::from_raw_parts(VERTICES.as_ptr() as *const u8, new_len)
+                }, // bytemuck::cast_slice(VERTICES),
+                usage: wgpu::BufferUsages::VERTEX,
+            })
+        };
 
         Self {
             surface,
@@ -134,6 +150,7 @@ impl GFX {
             queue,
             config: surface_config,
             render_pipeline,
+            vertex_buffer,
         }
     }
 
@@ -191,10 +208,10 @@ impl GFX {
             let mut render_pass = encoder.begin_render_pass(&desc);
 
             render_pass.set_pipeline(&self.render_pipeline);
+            render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
             // Draw something with 3 vertices and 1 instance.
             // Used in [[builtin(vertex_index)]] in the shader source.
-            render_pass.draw(0..3, 0..1);
-
+            render_pass.draw(0..VERTICES.len() as u32, 0..1);
         }
 
         // submit will accept anything that implements IntoIter

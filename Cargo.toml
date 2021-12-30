@@ -10,6 +10,7 @@ wgpu = "*"
 env_logger = "*"
 raw-window-handle = "0.4"
 pollster = "*"
+bytemuck = { version = "1.4", features = [ "derive" ] }
 
 [dependencies.windows]
 version = "0.29.0"
