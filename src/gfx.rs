@@ -1,8 +1,5 @@
-use std::mem::size_of;
-
 use wgpu::util::DeviceExt;
-
-use crate::{window::Window, Vertex, VERTICES};
+use crate::{window::Window, Vertex, INDICES, VERTICES};
 
 pub(crate) struct GFX {
     surface: wgpu::Surface,
@@ -11,6 +8,7 @@ pub(crate) struct GFX {
     config: wgpu::SurfaceConfiguration,
     render_pipeline: wgpu::RenderPipeline,
     vertex_buffer: wgpu::Buffer,
+    index_buffer: wgpu::Buffer,
 }
 
 impl GFX {
@@ -133,16 +131,17 @@ impl GFX {
             multiview: None,
         });
 
-        let vertex_buffer = unsafe {
-            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("Vertex Buffer"),
-                contents: unsafe {
-                    let new_len = core::mem::size_of_val(VERTICES) / std::mem::size_of::<u8>();
-                    core::slice::from_raw_parts(VERTICES.as_ptr() as *const u8, new_len)
-                }, // bytemuck::cast_slice(VERTICES),
-                usage: wgpu::BufferUsages::VERTEX,
-            })
-        };
+        let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Vertex Buffer"),
+            contents: _as_bytes(VERTICES), // bytemuck::cast_slice(VERTICES),
+            usage: wgpu::BufferUsages::VERTEX,
+        });
+
+        let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Index Buffer"),
+            contents: _as_bytes(INDICES),
+            usage: wgpu::BufferUsages::INDEX,
+        });
 
         Self {
             surface,
@@ -151,6 +150,7 @@ impl GFX {
             config: surface_config,
             render_pipeline,
             vertex_buffer,
+            index_buffer,
         }
     }
 
@@ -209,9 +209,10 @@ impl GFX {
 
             render_pass.set_pipeline(&self.render_pipeline);
             render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
+            render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
             // Draw something with 3 vertices and 1 instance.
             // Used in [[builtin(vertex_index)]] in the shader source.
-            render_pass.draw(0..VERTICES.len() as u32, 0..1);
+            render_pass.draw_indexed(0..INDICES.len() as u32, 0, 0..1);
         }
 
         // submit will accept anything that implements IntoIter
@@ -220,4 +221,12 @@ impl GFX {
 
         Ok(())
     }
+}
+
+// Utility function to return a slice of bytes from `arbitrary` slice.
+// !! Probably should use the Bytemuck crate: `bytemuck::cast_slice(SLICE)`
+// Instead of rolling my own here.
+pub fn _as_bytes<'a, T: ?Sized>(content: &'a T) -> &'a [u8] {
+    let new_len = core::mem::size_of_val(content) / std::mem::size_of::<u8>();
+    unsafe { core::slice::from_raw_parts(content as *const T as *const u8, new_len) }
 }
